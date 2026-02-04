@@ -301,6 +301,11 @@ function buildActionButtons(state: GroupState): ActionRowBuilder<ButtonBuilder> 
       .setLabel("Expulsar")
       .setEmoji("🧹")
       .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId("tbcgrp:action:delete")
+      .setLabel("Borrar grupo")
+      .setEmoji("🗑️")
+      .setStyle(ButtonStyle.Danger),
   );
 }
 
@@ -635,6 +640,20 @@ async function handleActionButton(interaction: Interaction, client: Client) {
       return;
     }
 
+    if (state.createdByUserId === userId) {
+      try {
+        await interaction.message.delete();
+      } catch {
+        // ignore delete errors
+      }
+      GROUPS.delete(state.messageId);
+      await interaction.reply({
+        content: "Grupo borrado.",
+        ephemeral: true,
+      });
+      return;
+    }
+
     state.slots[slotEntry] = null;
     delete state.pendingByUser[userId];
 
@@ -689,7 +708,13 @@ async function handleActionButton(interaction: Interaction, client: Client) {
   }
 
   const isCreator = state.createdByUserId === userId;
-  if (!isCreator) {
+  const isAdmin =
+    !!interaction.member &&
+    typeof interaction.member === "object" &&
+    "permissions" in interaction.member &&
+    (interaction.member.permissions as any)?.has(PermissionFlagsBits.Administrator);
+
+  if (!isCreator && !isAdmin) {
     await interaction.reply({
       content: "Solo el creador puede usar esta acción.",
       ephemeral: true,
@@ -720,6 +745,20 @@ async function handleActionButton(interaction: Interaction, client: Client) {
     await interaction.reply({
       content: "Elegí a quién expulsar:",
       components: [buildKickSelect(state)],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (action === "delete") {
+    try {
+      await interaction.message.delete();
+    } catch {
+      // ignore delete errors
+    }
+    GROUPS.delete(state.messageId);
+    await interaction.reply({
+      content: "Grupo borrado.",
       ephemeral: true,
     });
     return;

@@ -222,11 +222,6 @@ function buildEmbed(state: GroupState): EmbedBuilder {
         inline: false,
       },
       {
-        name: "Cómo unirse",
-        value: "1️⃣ Elegí rol\n2️⃣ Elegí clase\n3️⃣ Elegí nivel\n4️⃣ Listo",
-        inline: false,
-      },
-      {
         name: "Creador",
         value: creator,
         inline: true,

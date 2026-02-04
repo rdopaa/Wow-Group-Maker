@@ -28,6 +28,7 @@ type SlotAssignment = {
   userTag: string;
   wowClass: string;
   level: number;
+  confirmed: boolean;
 };
 
 type GroupState = {
@@ -115,7 +116,8 @@ function formatSlotValue(assignment: SlotAssignment | null): string {
   if (!assignment) return "Vacante";
   const base = getClassBaseName(assignment.wowClass);
   const emoji = CLASS_EMOJI[base] ? `${CLASS_EMOJI[base]} ` : "";
-  return `${emoji}<@${assignment.userId}> — ${assignment.wowClass} • Nivel ${assignment.level}`;
+  const statusEmoji = assignment.confirmed ? "🟢" : "🔴";
+  return `${statusEmoji} ${emoji}<@${assignment.userId}> — ${assignment.wowClass} • Nivel ${assignment.level}`;
 }
 
 function getState(messageId: string): GroupState | undefined {
@@ -178,6 +180,8 @@ function buildEmbed(state: GroupState): EmbedBuilder {
       ? "🔒 Grupo bloqueado"
       : "⏳ Armándose";
 
+  const filledCount = Object.values(state.slots).filter((slot) => slot).length;
+
   const creator = state.createdByUserId === "0"
     ? "—"
     : `<@${state.createdByUserId}>`;
@@ -186,7 +190,7 @@ function buildEmbed(state: GroupState): EmbedBuilder {
     .setTitle("WoW TBC • Grupo de 5")
     .setColor(state.completed ? 0x22c55e : 0x6366f1)
     .setAuthor({ name: "By Dopita" })
-    .setImage("https://imgur.com/pi7ZGF1.png")
+    .setThumbnail("https://imgur.com/pi7ZGF1.png")
     .setDescription(
       "Elegí tu rol con los botones y luego tu clase.\n" +
         "Un jugador por slot.\n",
@@ -231,6 +235,11 @@ function buildEmbed(state: GroupState): EmbedBuilder {
         name: "Estado",
         value: status,
         inline: false,
+      },
+      {
+        name: "Jugadores",
+        value: `${filledCount}/5`,
+        inline: true,
       },
     )
     .setFooter({ text: "World of Warcraft • TBC" })
@@ -281,6 +290,11 @@ function buildActionButtons(state: GroupState): ActionRowBuilder<ButtonBuilder> 
       .setLabel("Salir")
       .setEmoji("🚪")
       .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId("tbcgrp:action:confirm")
+      .setLabel("Confirmar")
+      .setEmoji("✅")
+      .setStyle(ButtonStyle.Success),
     lockButton,
     new ButtonBuilder()
       .setCustomId("tbcgrp:action:kick")
@@ -633,6 +647,47 @@ async function handleActionButton(interaction: Interaction, client: Client) {
     return;
   }
 
+  if (action === "confirm") {
+    const slotEntry = (Object.keys(state.slots) as SlotKey[]).find(
+      (key) => state.slots[key]?.userId === userId,
+    );
+
+    if (!slotEntry) {
+      await interaction.reply({
+        content: "No estás anotado en este grupo.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const assignment = state.slots[slotEntry];
+    if (!assignment) {
+      await interaction.reply({
+        content: "No estás anotado en este grupo.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (assignment.confirmed) {
+      await interaction.reply({
+        content: "Ya estás confirmado.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    assignment.confirmed = true;
+
+    await interaction.reply({
+      content: "Confirmado. ✅",
+      ephemeral: true,
+    });
+
+    await updateGroupMessage({ client, state });
+    return;
+  }
+
   const isCreator = state.createdByUserId === userId;
   if (!isCreator) {
     await interaction.reply({
@@ -887,6 +942,7 @@ async function handleLevelSelect(
     userTag: interaction.user.tag,
     wowClass: pending.wowClass,
     level,
+    confirmed: false,
   };
 
   delete state.pendingByUser[userId];

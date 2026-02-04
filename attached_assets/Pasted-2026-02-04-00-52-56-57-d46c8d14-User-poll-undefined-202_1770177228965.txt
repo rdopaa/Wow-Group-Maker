@@ -1,0 +1,136 @@
+2026-02-04 00:52:56.57
+d46c8d14
+User
+poll: undefined
+2026-02-04 00:52:56.57
+d46c8d14
+User
+flags: 64,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+Emitted 'error' event on Client instance at:
+2026-02-04 00:52:56.57
+d46c8d14
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:84:21) {
+2026-02-04 00:52:56.57
+d46c8d14
+User
+components: undefined,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+enforce_nonce: false,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+sticker_ids: undefined,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+type: 4,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+at handleErrors (/home/runner/workspace/node_modules/@discordjs/rest/dist/index.js:762:13)
+2026-02-04 00:52:56.57
+d46c8d14
+User
+}
+2026-02-04 00:52:56.57
+d46c8d14
+User
+username: undefined,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+rawError: {
+2026-02-04 00:52:56.57
+d46c8d14
+User
+message: 'Interaction has already been acknowledged.',
+2026-02-04 00:52:56.57
+d46c8d14
+User
+}
+2026-02-04 00:52:56.57
+d46c8d14
+User
+allowed_mentions: undefined,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+}
+2026-02-04 00:52:56.57
+d46c8d14
+User
+nonce: undefined,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+content: 'Solo el rol GM puede usar este comando.',
+2026-02-04 00:52:56.57
+d46c8d14
+User
+applied_tags: undefined,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+code: 40060,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+at async BurstHandler.runRequest (/home/runner/workspace/node_modules/@discordjs/rest/dist/index.js:866:23)
+2026-02-04 00:52:56.57
+d46c8d14
+User
+embeds: undefined,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+data: {
+2026-02-04 00:52:56.57
+d46c8d14
+User
+node:events:502
+2026-02-04 00:52:56.57
+d46c8d14
+User
+},
+2026-02-04 00:52:56.57
+d46c8d14
+User
+code: 40060
+2026-02-04 00:52:56.57
+d46c8d14
+User
+method: 'POST',
+2026-02-04 00:52:56.57
+d46c8d14
+User
+at async N8 (/home/runner/workspace/dist/index.cjs:70:3987)
+2026-02-04 00:52:56.57
+d46c8d14
+User
+},
+2026-02-04 00:52:56.57
+d46c8d14
+User
+Node.js v20.20.0
+2026-02-04 00:52:56.57
+d46c8d14
+User
+thread_name: undefined,
+2026-02-04 00:52:56.57
+d46c8d14
+User
+url: 'https://discord.com/api/v10/interactions/1468454234566688862/aW50ZXJhY3Rpb246MTQ2ODQ1NDIzNDU2NjY4ODg2MjpWa3NKMlQxNTNWNkFqZ3kyd2UwZ1Bkcm9zVEREUFpYMFphNGF1T3hESFp4UXVwWHp0azRrQmx5bnFyNVpkbE1HYVRiQjFRU1lpajZaT2E5MDNrQU5zRERHOEVLNjVxRm5EcjdlRHdkTVFxSEVEZXZWdTVhRENSajFuQktRZ1YyaA/callback?with_response=false'
+2026-02-04 00:52:56.57
+d46c8d14
+User
+message_reference: undefined,
+2026-02-04 00:52:58.37
+d46c8d14
+System
+command finished with error [node ./dist/index.cjs]: exit status 1

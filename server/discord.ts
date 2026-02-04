@@ -382,7 +382,7 @@ async function updateGroupMessage(params: {
       embeds: [buildEmbed(params.state)],
       components: [buildButtons(disableJoin), buildActionButtons(params.state)],
     });
-    saveGroup(params.state);
+    await saveGroup(params.state);
   } catch {
     // ignore update errors (message deleted or missing permissions)
   }
@@ -575,7 +575,7 @@ async function handleActionButton(interaction: Interaction, client: Client) {
     });
 
     GROUPS.set(message.id, state);
-    saveGroup(state);
+    await saveGroup(state);
 
     await interaction.reply({
       content: "Grupo creado.",
@@ -615,7 +615,7 @@ async function handleActionButton(interaction: Interaction, client: Client) {
         // ignore delete errors
       }
       GROUPS.delete(state.messageId);
-      deleteGroup(state.messageId);
+      await deleteGroup(state.messageId);
       await interaction.reply({
         content: "Grupo borrado.",
         ephemeral: true,
@@ -726,7 +726,7 @@ async function handleActionButton(interaction: Interaction, client: Client) {
       // ignore delete errors
     }
     GROUPS.delete(state.messageId);
-    deleteGroup(state.messageId);
+    await deleteGroup(state.messageId);
     await interaction.reply({
       content: "Grupo borrado.",
       ephemeral: true,
@@ -1078,7 +1078,7 @@ async function handleCreateGroupCommand(interaction: Interaction) {
   });
 
   GROUPS.set(message.id, state);
-  saveGroup(state);
+  await saveGroup(state);
 }
 
 async function handleChannelGroupCommand(interaction: Interaction) {
@@ -1152,7 +1152,7 @@ export async function startDiscordBot(): Promise<void> {
     throw new Error("DISCORD_BOT_TOKEN must be set");
   }
 
-  initDb();
+  await initDb();
 
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
@@ -1160,7 +1160,7 @@ export async function startDiscordBot(): Promise<void> {
 
   client.once(Events.ClientReady, async (readyClient: Client<true>) => {
     await registerSlashCommands(readyClient.user.id);
-    const persisted = loadGroups();
+    const persisted = await loadGroups();
     persisted.forEach((state) => {
       GROUPS.set(state.messageId, state);
     });

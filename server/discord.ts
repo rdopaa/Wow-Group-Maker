@@ -515,7 +515,12 @@ function parseStatsChannelSelectId(customId: string): {
 
 async function buildRoleStatsEmbed(guildId: string, client: Client): Promise<EmbedBuilder> {
   const guild = await client.guilds.fetch(guildId);
-  await guild.members.fetch();
+  try {
+    await guild.members.fetch({ withPresences: false, force: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    throw new Error(`members_fetch_failed:${message}`);
+  }
 
   const classCounts: Record<string, number> = {};
   const professionCounts: Record<string, number> = {};
@@ -1027,9 +1032,10 @@ async function handleStatsCommand(interaction: Interaction, client: Client) {
     STATS_PANELS.set(message.id, panel);
     await saveStatsPanel(panel);
     await interaction.editReply("Panel de estadísticas publicado.");
-  } catch {
+  } catch (err) {
+    const details = err instanceof Error ? err.message : "Unknown error";
     await interaction.editReply(
-      "No pude obtener los miembros. Verificá que el bot tenga el intent de miembros habilitado.",
+      `No pude obtener los miembros. Verificá que el bot tenga el intent de miembros habilitado y reiniciá el bot. (${details})`,
     );
   }
 }
@@ -1079,10 +1085,11 @@ async function handleStatsChannelSelect(
       content: "Panel de estadísticas publicado.",
       components: [],
     });
-  } catch {
+  } catch (err) {
+    const details = err instanceof Error ? err.message : "Unknown error";
     await interaction.followUp({
       content:
-        "No pude obtener los miembros. Verificá que el bot tenga el intent de miembros habilitado.",
+        `No pude obtener los miembros. Verificá que el bot tenga el intent de miembros habilitado y reiniciá el bot. (${details})`,
       ephemeral: true,
     });
   }

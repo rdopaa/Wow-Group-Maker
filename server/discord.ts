@@ -421,19 +421,17 @@ async function handleCreateGroupCommand(interaction: Interaction) {
     return;
   }
 
-  // Only members with a role named "GM" may use it
+  // Only members with Administrator permission may use it
   const member = interaction.member;
-  const hasGMRole =
+  const isAdmin =
     !!member &&
     typeof member === "object" &&
-    "roles" in member &&
-    (member.roles as any)?.cache?.some((r: any) =>
-      String(r?.name ?? "").toLowerCase() === "gm",
-    );
+    "permissions" in member &&
+    (member.permissions as any)?.has(PermissionFlagsBits.Administrator);
 
-  if (!hasGMRole) {
+  if (!isAdmin) {
     await interaction.reply({
-      content: "Solo el rol GM puede usar este comando.",
+      content: "Solo usuarios con permiso de Administrador pueden usar este comando.",
       ephemeral: true,
     });
     return;

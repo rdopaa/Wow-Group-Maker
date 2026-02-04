@@ -46,18 +46,68 @@ type GroupState = {
 const GROUPS = new Map<string, GroupState>();
 
 const ROLE_LABEL: Record<SlotKey, string> = {
-  TANK: "🛡 TANK",
-  HEALER: "❤️ HEALER",
-  DPS1: "⚔ DPS 1",
-  DPS2: "⚔ DPS 2",
-  DPS3: "⚔ DPS 3",
+  TANK: "🛡️ TANK",
+  HEALER: "💚 HEALER",
+  DPS1: "⚔️ DPS 1",
+  DPS2: "⚔️ DPS 2",
+  DPS3: "⚔️ DPS 3",
+};
+
+const ROLE_DISPLAY: Record<RoleKey, string> = {
+  TANK: "Tank",
+  HEALER: "Healer",
+  DPS: "DPS",
 };
 
 const CLASS_OPTIONS: Record<RoleKey, string[]> = {
-  TANK: ["Warrior", "Paladin", "Druid"],
-  HEALER: ["Priest", "Paladin", "Druid", "Shaman"],
-  DPS: ["Warrior", "Rogue", "Mage", "Warlock", "Hunter", "Shaman", "Druid"],
+  TANK: [
+    "Warrior (Protection)",
+    "Paladin (Protection)",
+    "Druid (Feral)",
+  ],
+  HEALER: [
+    "Priest (Holy/Discipline)",
+    "Paladin (Holy)",
+    "Druid (Restoration)",
+    "Shaman (Restoration)",
+  ],
+  DPS: [
+    "Warrior (Arms/Fury)",
+    "Rogue",
+    "Mage",
+    "Warlock",
+    "Hunter",
+    "Shaman (Enhancement/Elemental)",
+    "Druid (Balance/Feral)",
+    "Paladin (Retribution)",
+    "Priest (Shadow)",
+  ],
 };
+
+const CLASS_EMOJI: Record<string, string> = {
+  Warrior: "⚔️",
+  Paladin: "🛡️",
+  Druid: "🐻",
+  Priest: "✨",
+  Shaman: "⚡",
+  Rogue: "🗡️",
+  Mage: "🪄",
+  Warlock: "💀",
+  Hunter: "🏹",
+};
+
+const PENDING_TTL_MS = 15 * 60 * 1000;
+
+function getClassBaseName(name: string): string {
+  return name.split(" ")[0];
+}
+
+function formatSlotValue(assignment: SlotAssignment | null): string {
+  if (!assignment) return "Vacante";
+  const base = getClassBaseName(assignment.wowClass);
+  const emoji = CLASS_EMOJI[base] ? `${CLASS_EMOJI[base]} ` : "";
+  return `${emoji}<@${assignment.userId}> — ${assignment.wowClass}`;
+}
 
 function getState(messageId: string): GroupState | undefined {
   return GROUPS.get(messageId);
@@ -112,29 +162,66 @@ function getNextFreeSlot(state: GroupState, role: RoleKey): SlotKey | null {
 }
 
 function buildEmbed(state: GroupState): EmbedBuilder {
-  const embed = new EmbedBuilder()
-    .setTitle("Grupo WoW TBC (5)")
-    .setColor(0x2b2d31);
-
-  const lines = (Object.keys(ROLE_LABEL) as SlotKey[]).map((slotKey) => {
-    const label = ROLE_LABEL[slotKey];
-    const assignment = state.slots[slotKey];
-
-    if (!assignment) {
-      if (slotKey === "TANK" || slotKey === "HEALER") {
-        return `${label}: Vacante (1)`;
-      }
-      return `${label}: Vacante`;
-    }
-
-    return `${label}: <@${assignment.userId}> — ${assignment.wowClass}`;
-  });
-
   const status = state.completed
-    ? "✅ Preparándose para TBC"
+    ? "✅ Grupo completo"
     : "⏳ Armándose";
 
-  embed.setDescription(lines.join("\n") + `\n\nEstado: ${status}`);
+  const creator = state.createdByUserId === "0"
+    ? "—"
+    : `<@${state.createdByUserId}>`;
+
+  const embed = new EmbedBuilder()
+    .setTitle("WoW TBC • Grupo de 5")
+    .setColor(state.completed ? 0x22c55e : 0x6366f1)
+    .setAuthor({ name: "By Dopita" })
+    .setDescription(
+      "Elegí tu rol con los botones y luego tu clase.\n" +
+        "Un jugador por slot.\n",
+    )
+    .addFields(
+      {
+        name: ROLE_LABEL.TANK,
+        value: formatSlotValue(state.slots.TANK),
+        inline: true,
+      },
+      {
+        name: ROLE_LABEL.HEALER,
+        value: formatSlotValue(state.slots.HEALER),
+        inline: true,
+      },
+      {
+        name: ROLE_LABEL.DPS1,
+        value: formatSlotValue(state.slots.DPS1),
+        inline: true,
+      },
+      {
+        name: ROLE_LABEL.DPS2,
+        value: formatSlotValue(state.slots.DPS2),
+        inline: true,
+      },
+      {
+        name: ROLE_LABEL.DPS3,
+        value: formatSlotValue(state.slots.DPS3),
+        inline: true,
+      },
+      {
+        name: "Cómo unirse",
+        value: "1️⃣ Elegí rol\n2️⃣ Elegí clase\n3️⃣ Listo",
+        inline: false,
+      },
+      {
+        name: "Creador",
+        value: creator,
+        inline: true,
+      },
+      {
+        name: "Estado",
+        value: status,
+        inline: false,
+      },
+    )
+    .setFooter({ text: "World of Warcraft • TBC" })
+    .setTimestamp(new Date());
 
   return embed;
 }
@@ -144,16 +231,19 @@ function buildButtons(disabled: boolean): ActionRowBuilder<ButtonBuilder> {
     new ButtonBuilder()
       .setCustomId("tbcgrp:role:TANK")
       .setLabel("Tank")
+      .setEmoji("🛡️")
       .setStyle(ButtonStyle.Primary)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId("tbcgrp:role:HEALER")
       .setLabel("Healer")
+      .setEmoji("💚")
       .setStyle(ButtonStyle.Success)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId("tbcgrp:role:DPS")
       .setLabel("DPS")
+      .setEmoji("⚔️")
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
   );
@@ -168,12 +258,13 @@ function buildClassSelect(params: {
 
   const select = new StringSelectMenuBuilder()
     .setCustomId(`tbcgrp:class:${params.messageId}:${params.role}`)
-    .setPlaceholder("Elegí tu clase")
+    .setPlaceholder(`Elegí tu clase para ${ROLE_DISPLAY[params.role]}`)
     .setMinValues(1)
     .setMaxValues(1)
     .setDisabled(params.disabled)
     .addOptions(
       classes.map((c) => ({
+        emoji: CLASS_EMOJI[getClassBaseName(c)],
         label: c,
         value: c,
       })),
@@ -186,18 +277,24 @@ async function updateGroupMessage(params: {
   client: Client;
   state: GroupState;
 }): Promise<void> {
-  const channel = await params.client.channels.fetch(params.state.channelId);
-  if (!channel || !channel.isTextBased()) return;
+  try {
+    const channel = await params.client.channels.fetch(
+      params.state.channelId,
+    );
+    if (!channel || !channel.isTextBased()) return;
 
-  const msg = await channel.messages.fetch(params.state.messageId);
+    const msg = await channel.messages.fetch(params.state.messageId);
 
-  const completed = isGroupComplete(params.state);
-  params.state.completed = completed;
+    const completed = isGroupComplete(params.state);
+    params.state.completed = completed;
 
-  await msg.edit({
-    embeds: [buildEmbed(params.state)],
-    components: [buildButtons(completed)],
-  });
+    await msg.edit({
+      embeds: [buildEmbed(params.state)],
+      components: [buildButtons(completed)],
+    });
+  } catch {
+    // ignore update errors (message deleted or missing permissions)
+  }
 }
 
 function parseRoleButtonId(customId: string): RoleKey | null {
@@ -295,7 +392,7 @@ async function handleRoleButton(interaction: Interaction, client: Client) {
     if (s && p && p.createdAt === state.pendingByUser[userId]?.createdAt) {
       delete s.pendingByUser[userId];
     }
-  }, 15 * 60 * 1000);
+  }, PENDING_TTL_MS);
 
   // no message update yet; only after class selection
   void client;
@@ -351,8 +448,16 @@ async function handleClassSelect(
     return;
   }
 
-  const wowClass = interaction.values[0];
-  const allowed = CLASS_OPTIONS[pending.role].includes(wowClass);
+  const wowClass = interaction.values?.[0];
+  if (!wowClass) {
+    await interaction.reply({
+      content: "No se pudo leer tu clase. Volvé a intentarlo.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const allowed = CLASS_OPTIONS[pending.role]?.includes(wowClass);
   if (!allowed) {
     await interaction.reply({
       content: "Clase inválida para ese rol.",

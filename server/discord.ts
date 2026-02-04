@@ -560,17 +560,6 @@ async function handleActionButton(interaction: Interaction, client: Client) {
   if (parts[0] !== "tbcgrp" || parts[1] !== "action") return;
 
   const action = parts[2];
-  const state = getState(interaction.message.id);
-  if (!state) {
-    await interaction.reply({
-      content: "Este grupo ya no está disponible.",
-      ephemeral: true,
-    });
-    return;
-  }
-
-  const userId = interaction.user.id;
-
   if (action === "create") {
     if (!interaction.inGuild()) {
       await interaction.reply({
@@ -607,6 +596,17 @@ async function handleActionButton(interaction: Interaction, client: Client) {
     });
     return;
   }
+
+  const state = getState(interaction.message.id);
+  if (!state) {
+    await interaction.reply({
+      content: "Este grupo ya no está disponible.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const userId = interaction.user.id;
 
   if (action === "leave") {
     const slotEntry = (Object.keys(state.slots) as SlotKey[]).find(

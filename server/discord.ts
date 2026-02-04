@@ -1,3 +1,4 @@
+import process from "node:process";
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -1071,11 +1072,11 @@ export async function startDiscordBot(): Promise<void> {
     intents: [GatewayIntentBits.Guilds],
   });
 
-  client.once(Events.ClientReady, async (readyClient) => {
+  client.once(Events.ClientReady, async (readyClient: Client<true>) => {
     await registerSlashCommands(readyClient.user.id);
   });
 
-  client.on(Events.InteractionCreate, async (interaction) => {
+  client.on(Events.InteractionCreate, async (interaction: Interaction) => {
     try {
       await handleCreateGroupCommand(interaction);
       await handleChannelGroupCommand(interaction);

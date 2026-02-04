@@ -1044,6 +1044,8 @@ async function registerSlashCommands(clientId: string) {
     process.env.DISCORD_BOT_TOKEN!,
   );
 
+  const guildId = process.env.DISCORD_GUILD_ID;
+
   const commands = [
     new SlashCommandBuilder()
       .setName("creategroup")
@@ -1057,9 +1059,15 @@ async function registerSlashCommands(clientId: string) {
       .setDMPermission(false),
   ].map((c) => c.toJSON());
 
-  await rest.put(Routes.applicationCommands(clientId), {
-    body: commands,
-  });
+  if (guildId) {
+    await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
+      body: commands,
+    });
+  } else {
+    await rest.put(Routes.applicationCommands(clientId), {
+      body: commands,
+    });
+  }
 }
 
 export async function startDiscordBot(): Promise<void> {

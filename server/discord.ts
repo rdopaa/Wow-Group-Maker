@@ -2,6 +2,8 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ChannelSelectMenuBuilder,
+  ChannelType,
   Client,
   EmbedBuilder,
   Events,
@@ -286,6 +288,16 @@ function buildActionButtons(state: GroupState): ActionRowBuilder<ButtonBuilder> 
   );
 }
 
+function buildCreateGroupButton(): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId("tbcgrp:action:create")
+      .setLabel("Crear Grupo")
+      .setEmoji("⚔️")
+      .setStyle(ButtonStyle.Success),
+  );
+}
+
 function buildClassSelect(params: {
   messageId: string;
   role: RoleKey;
@@ -351,6 +363,17 @@ function buildKickSelect(state: GroupState): ActionRowBuilder<StringSelectMenuBu
   return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
 }
 
+function buildChannelSelect(userId: string): ActionRowBuilder<ChannelSelectMenuBuilder> {
+  const select = new ChannelSelectMenuBuilder()
+    .setCustomId(`tbcgrp:channel:${userId}`)
+    .setPlaceholder("Elegí el canal para publicar")
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+
+  return new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(select);
+}
+
 async function updateGroupMessage(params: {
   client: Client;
   state: GroupState;
@@ -398,6 +421,10 @@ function isKickSelectId(customId: string): boolean {
   return customId.startsWith("tbcgrp:kick:");
 }
 
+function isChannelSelectId(customId: string): boolean {
+  return customId.startsWith("tbcgrp:channel:");
+}
+
 function parseClassSelectId(customId: string): {
   messageId: string;
   role: RoleKey;
@@ -427,6 +454,15 @@ function parseKickSelectId(customId: string): {
   if (parts.length !== 3) return null;
   if (parts[0] !== "tbcgrp" || parts[1] !== "kick") return null;
   return { messageId: parts[2] };
+}
+
+function parseChannelSelectId(customId: string): {
+  userId: string;
+} | null {
+  const parts = customId.split(":");
+  if (parts.length !== 3) return null;
+  if (parts[0] !== "tbcgrp" || parts[1] !== "channel") return null;
+  return { userId: parts[2] };
 }
 
 async function handleRoleButton(interaction: Interaction, client: Client) {
@@ -533,6 +569,43 @@ async function handleActionButton(interaction: Interaction, client: Client) {
 
   const userId = interaction.user.id;
 
+  if (action === "create") {
+    if (!interaction.inGuild()) {
+      await interaction.reply({
+        content: "Este botón solo funciona dentro de un servidor.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const channel = await client.channels.fetch(interaction.channelId);
+    if (!channel || !channel.isTextBased()) {
+      await interaction.reply({
+        content: "No se pudo encontrar el canal.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const payload = buildInitialGroupMessage(interaction.user.id);
+    const message = await channel.send(payload);
+
+    const state = createEmptyState({
+      messageId: message.id,
+      channelId: message.channelId,
+      guildId: message.guildId ?? interaction.guildId!,
+      createdByUserId: interaction.user.id,
+    });
+
+    GROUPS.set(message.id, state);
+
+    await interaction.reply({
+      content: "Grupo creado.",
+      ephemeral: true,
+    });
+    return;
+  }
+
   if (action === "leave") {
     const slotEntry = (Object.keys(state.slots) as SlotKey[]).find(
       (key) => state.slots[key]?.userId === userId,
@@ -567,23 +640,13 @@ async function handleActionButton(interaction: Interaction, client: Client) {
     return;
   }
 
-  if (action === "lock") {
-    state.locked = true;
-    await interaction.reply({
-      content: "Grupo bloqueado.",
-      ephemeral: true,
-    });
+  if (action === "lock" || action === "unlock") {
+    await interaction.deferReply({ ephemeral: true });
+    state.locked = action === "lock";
     await updateGroupMessage({ client, state });
-    return;
-  }
-
-  if (action === "unlock") {
-    state.locked = false;
-    await interaction.reply({
-      content: "Grupo desbloqueado.",
-      ephemeral: true,
+    await interaction.editReply({
+      content: action === "lock" ? "Grupo bloqueado." : "Grupo desbloqueado.",
     });
-    await updateGroupMessage({ client, state });
     return;
   }
 
@@ -606,6 +669,52 @@ async function handleActionButton(interaction: Interaction, client: Client) {
   }
 }
 
+async function handleChannelSelect(
+  interaction: Interaction,
+  client: Client,
+) {
+  if (!interaction.isChannelSelectMenu()) return;
+  const parsed = parseChannelSelectId(interaction.customId);
+  if (!parsed) return;
+
+  if (interaction.user.id !== parsed.userId) {
+    await interaction.reply({
+      content: "Solo quien ejecutó el comando puede elegir el canal.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const channelId = interaction.values?.[0];
+  if (!channelId) {
+    await interaction.reply({
+      content: "No se pudo leer el canal.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const channel = await client.channels.fetch(channelId);
+  if (!channel || !channel.isTextBased()) {
+    await interaction.reply({
+      content: "Canal inválido.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  await channel.send({
+    content:
+      "Bienvenido al Sistema de LFG de Sons of Liberty. Para crear grupo para la apertura de TBC o grupo temporal selecciona abajo Crear grupo.",
+    components: [buildCreateGroupButton()],
+  });
+
+  await interaction.update({
+    content: "Panel de LFG publicado.",
+    components: [],
+  });
+}
+
 async function handleClassSelect(
   interaction: StringSelectMenuInteraction,
   client: Client,
@@ -625,6 +734,14 @@ async function handleClassSelect(
   if (state.completed) {
     await interaction.reply({
       content: "Este grupo ya está completo.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (state.locked) {
+    await interaction.reply({
+      content: "Este grupo está bloqueado.",
       ephemeral: true,
     });
     return;
@@ -702,6 +819,14 @@ async function handleLevelSelect(
   if (!state) {
     await interaction.reply({
       content: "Este grupo ya no está disponible.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (state.locked) {
+    await interaction.reply({
+      content: "Este grupo está bloqueado.",
       ephemeral: true,
     });
     return;
@@ -811,7 +936,7 @@ async function handleKickSelect(
   await updateGroupMessage({ client, state });
 }
 
-function buildInitialGroupMessage(): {
+function buildInitialGroupMessage(createdByUserId: string): {
   embeds: EmbedBuilder[];
   components: ActionRowBuilder<ButtonBuilder>[];
 } {
@@ -819,7 +944,7 @@ function buildInitialGroupMessage(): {
     messageId: "0",
     channelId: "0",
     guildId: "0",
-    createdByUserId: "0",
+    createdByUserId,
     slots: { TANK: null, HEALER: null, DPS1: null, DPS2: null, DPS3: null },
     completed: false,
     locked: false,
@@ -860,7 +985,7 @@ async function handleCreateGroupCommand(interaction: Interaction) {
     return;
   }
 
-  const payload = buildInitialGroupMessage();
+  const payload = buildInitialGroupMessage(interaction.user.id);
 
   const reply = await interaction.reply({
     ...payload,
@@ -879,6 +1004,40 @@ async function handleCreateGroupCommand(interaction: Interaction) {
   GROUPS.set(message.id, state);
 }
 
+async function handleChannelGroupCommand(interaction: Interaction) {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== "channelgroup") return;
+
+  if (!interaction.inGuild()) {
+    await interaction.reply({
+      content: "Este comando solo funciona dentro de un servidor.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const member = interaction.member;
+  const isAdmin =
+    !!member &&
+    typeof member === "object" &&
+    "permissions" in member &&
+    (member.permissions as any)?.has(PermissionFlagsBits.Administrator);
+
+  if (!isAdmin) {
+    await interaction.reply({
+      content: "Solo administradores pueden usar este comando.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  await interaction.reply({
+    content: "Seleccioná el canal donde publicar el panel de LFG:",
+    components: [buildChannelSelect(interaction.user.id)],
+    ephemeral: true,
+  });
+}
+
 async function registerSlashCommands(clientId: string) {
   const rest = new REST({ version: "10" }).setToken(
     process.env.DISCORD_BOT_TOKEN!,
@@ -889,6 +1048,11 @@ async function registerSlashCommands(clientId: string) {
       .setName("creategroup")
       .setDescription("Crea un grupo WoW TBC de 5 jugadores")
       .setDefaultMemberPermissions(PermissionFlagsBits.SendMessages)
+      .setDMPermission(false),
+    new SlashCommandBuilder()
+      .setName("channelgroup")
+      .setDescription("Publica el panel de LFG en un canal")
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
       .setDMPermission(false),
   ].map((c) => c.toJSON());
 
@@ -914,10 +1078,16 @@ export async function startDiscordBot(): Promise<void> {
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
       await handleCreateGroupCommand(interaction);
+      await handleChannelGroupCommand(interaction);
 
       if (interaction.isButton()) {
         await handleActionButton(interaction, client);
         await handleRoleButton(interaction, client);
+        return;
+      }
+
+      if (interaction.isChannelSelectMenu()) {
+        await handleChannelSelect(interaction, client);
         return;
       }
 

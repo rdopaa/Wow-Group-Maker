@@ -186,6 +186,7 @@ function buildEmbed(state: GroupState): EmbedBuilder {
     .setTitle("WoW TBC • Grupo de 5")
     .setColor(state.completed ? 0x22c55e : 0x6366f1)
     .setAuthor({ name: "By Dopita" })
+    .setImage("https://imgur.com/pi7ZGF1.png")
     .setDescription(
       "Elegí tu rol con los botones y luego tu clase.\n" +
         "Un jugador por slot.\n",
@@ -704,9 +705,18 @@ async function handleChannelSelect(
     return;
   }
 
+  const infoEmbed = new EmbedBuilder()
+    .setTitle("Sistema de LFG • Sons of Liberty")
+    .setColor(0x6366f1)
+    .setAuthor({ name: "By Dopita" })
+    .setImage("https://imgur.com/pi7ZGF1.png")
+    .setDescription(
+      "Bienvenido al Sistema de LFG de Sons of Liberty.\n" +
+        "Para crear grupo para la apertura de TBC o grupo temporal selecciona abajo Crear grupo.",
+    );
+
   await channel.send({
-    content:
-      "Bienvenido al Sistema de LFG de Sons of Liberty. Para crear grupo para la apertura de TBC o grupo temporal selecciona abajo Crear grupo.",
+    embeds: [infoEmbed],
     components: [buildCreateGroupButton()],
   });
 

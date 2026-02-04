@@ -1,4 +1,5 @@
 import process from "node:process";
+import { deleteGroup, initDb, loadGroups, saveGroup } from "./db";
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -19,37 +20,7 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 
-type RoleKey = "TANK" | "HEALER" | "DPS";
-
-type SlotKey = "TANK" | "HEALER" | "DPS1" | "DPS2" | "DPS3";
-
-type SlotAssignment = {
-  userId: string;
-  userTag: string;
-  wowClass: string;
-  level: number;
-  confirmed: boolean;
-};
-
-type GroupState = {
-  messageId: string;
-  channelId: string;
-  guildId: string;
-  createdByUserId: string;
-  slots: Record<SlotKey, SlotAssignment | null>;
-  completed: boolean;
-  locked: boolean;
-  pendingByUser: Record<
-    string,
-    {
-      role: RoleKey;
-      reservedSlot: SlotKey;
-      createdAt: number;
-      wowClass?: string;
-      step: "CLASS" | "LEVEL";
-    }
-  >;
-};
+import type { GroupState, RoleKey, SlotAssignment, SlotKey } from "./db";
 
 const GROUPS = new Map<string, GroupState>();
 
@@ -95,12 +66,12 @@ const CLASS_OPTIONS: Record<RoleKey, string[]> = {
 const CLASS_EMOJI: Record<string, string> = {
   Warrior: "⚔️",
   Paladin: "🛡️",
-  Druid: "🐻",
-  Priest: "✨",
+  Druid: "🌙",
+  Priest: "🌟",
   Shaman: "⚡",
   Rogue: "🗡️",
-  Mage: "🪄",
-  Warlock: "💀",
+  Mage: "🌀",
+  Warlock: "👹",
   Hunter: "🏹",
 };
 
@@ -411,6 +382,7 @@ async function updateGroupMessage(params: {
       embeds: [buildEmbed(params.state)],
       components: [buildButtons(disableJoin), buildActionButtons(params.state)],
     });
+    saveGroup(params.state);
   } catch {
     // ignore update errors (message deleted or missing permissions)
   }
@@ -603,6 +575,7 @@ async function handleActionButton(interaction: Interaction, client: Client) {
     });
 
     GROUPS.set(message.id, state);
+    saveGroup(state);
 
     await interaction.reply({
       content: "Grupo creado.",
@@ -642,6 +615,7 @@ async function handleActionButton(interaction: Interaction, client: Client) {
         // ignore delete errors
       }
       GROUPS.delete(state.messageId);
+      deleteGroup(state.messageId);
       await interaction.reply({
         content: "Grupo borrado.",
         ephemeral: true,
@@ -752,6 +726,7 @@ async function handleActionButton(interaction: Interaction, client: Client) {
       // ignore delete errors
     }
     GROUPS.delete(state.messageId);
+    deleteGroup(state.messageId);
     await interaction.reply({
       content: "Grupo borrado.",
       ephemeral: true,
@@ -1103,6 +1078,7 @@ async function handleCreateGroupCommand(interaction: Interaction) {
   });
 
   GROUPS.set(message.id, state);
+  saveGroup(state);
 }
 
 async function handleChannelGroupCommand(interaction: Interaction) {
@@ -1176,12 +1152,21 @@ export async function startDiscordBot(): Promise<void> {
     throw new Error("DISCORD_BOT_TOKEN must be set");
   }
 
+  initDb();
+
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
   });
 
   client.once(Events.ClientReady, async (readyClient: Client<true>) => {
     await registerSlashCommands(readyClient.user.id);
+    const persisted = loadGroups();
+    persisted.forEach((state) => {
+      GROUPS.set(state.messageId, state);
+    });
+    for (const state of persisted) {
+      await updateGroupMessage({ client, state });
+    }
   });
 
   client.on(Events.InteractionCreate, async (interaction: Interaction) => {

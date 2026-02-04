@@ -48,5 +48,15 @@ export const groupSlots = pgTable(
   }),
 );
 
+export const statsPanels = pgTable("stats_panels", {
+  messageId: text("message_id").primaryKey(),
+  channelId: text("channel_id").notNull(),
+  guildId: text("guild_id").notNull(),
+  createdByUserId: text("created_by_user_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;

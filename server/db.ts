@@ -1,7 +1,8 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, sql } from "drizzle-orm";
 import { Pool } from "pg";
-import { groups, groupSlots } from "@shared/schema";
+import { groups, groupSlots, statsPanels } from "@shared/schema";
+import type { InferSelectModel } from "drizzle-orm";
 
 export type RoleKey = "TANK" | "HEALER" | "DPS";
 
@@ -35,7 +36,20 @@ export type GroupState = {
   >;
 };
 
-let db: ReturnType<typeof drizzle> | null = null;
+export type StatsPanel = {
+  messageId: string;
+  channelId: string;
+  guildId: string;
+  createdByUserId: string;
+};
+
+type StatsPanelRow = InferSelectModel<typeof statsPanels>;
+type GroupRow = InferSelectModel<typeof groups>;
+type GroupSlotRow = InferSelectModel<typeof groupSlots>;
+
+type DrizzleDb = ReturnType<typeof drizzle>;
+
+let db: DrizzleDb | null = null;
 
 function ensureDb() {
   if (db) return db;
@@ -79,12 +93,22 @@ export async function initDb(): Promise<void> {
       primary key (message_id, slot_key)
     );
   `);
+
+  await database.execute(sql`
+    create table if not exists stats_panels (
+      message_id text primary key,
+      channel_id text not null,
+      guild_id text not null,
+      created_by_user_id text not null,
+      created_at timestamptz not null default now()
+    );
+  `);
 }
 
 export async function saveGroup(state: GroupState): Promise<void> {
   const database = ensureDb();
 
-  await database.transaction(async (tx) => {
+  await database.transaction(async (tx: DrizzleDb) => {
     await tx
       .insert(groups)
       .values({
@@ -139,6 +163,42 @@ export async function deleteGroup(messageId: string): Promise<void> {
   await database.delete(groups).where(eq(groups.messageId, messageId));
 }
 
+export async function saveStatsPanel(panel: StatsPanel): Promise<void> {
+  const database = ensureDb();
+  await database
+    .insert(statsPanels)
+    .values({
+      messageId: panel.messageId,
+      channelId: panel.channelId,
+      guildId: panel.guildId,
+      createdByUserId: panel.createdByUserId,
+    })
+    .onConflictDoUpdate({
+      target: statsPanels.messageId,
+      set: {
+        channelId: panel.channelId,
+        guildId: panel.guildId,
+        createdByUserId: panel.createdByUserId,
+      },
+    });
+}
+
+export async function deleteStatsPanel(messageId: string): Promise<void> {
+  const database = ensureDb();
+  await database.delete(statsPanels).where(eq(statsPanels.messageId, messageId));
+}
+
+export async function loadStatsPanels(): Promise<StatsPanel[]> {
+  const database = ensureDb();
+  const rows = await database.select().from(statsPanels);
+  return rows.map((row: StatsPanelRow) => ({
+    messageId: row.messageId,
+    channelId: row.channelId,
+    guildId: row.guildId,
+    createdByUserId: row.createdByUserId,
+  }));
+}
+
 export async function loadGroups(): Promise<GroupState[]> {
   const database = ensureDb();
   const groupRows = await database.select().from(groups);
@@ -146,7 +206,7 @@ export async function loadGroups(): Promise<GroupState[]> {
 
   const slotsByMessage = new Map<string, Record<SlotKey, SlotAssignment | null>>();
 
-  slotRows.forEach((row) => {
+  slotRows.forEach((row: GroupSlotRow) => {
     const slots = slotsByMessage.get(row.messageId) ?? {
       TANK: null,
       HEALER: null,
@@ -170,7 +230,7 @@ export async function loadGroups(): Promise<GroupState[]> {
     slotsByMessage.set(row.messageId, slots);
   });
 
-  return groupRows.map((row) => {
+  return groupRows.map((row: GroupRow) => {
     const slots = slotsByMessage.get(row.messageId) ?? {
       TANK: null,
       HEALER: null,

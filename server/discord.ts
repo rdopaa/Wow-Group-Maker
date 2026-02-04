@@ -1,5 +1,13 @@
 import process from "node:process";
-import { deleteGroup, initDb, loadGroups, saveGroup } from "./db";
+import {
+  deleteGroup,
+  deleteStatsPanel,
+  initDb,
+  loadGroups,
+  loadStatsPanels,
+  saveGroup,
+  saveStatsPanel,
+} from "./db";
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -20,9 +28,13 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 
-import type { GroupState, RoleKey, SlotAssignment, SlotKey } from "./db";
+import type { GroupState, RoleKey, SlotAssignment, SlotKey, StatsPanel } from "./db";
 
 const GROUPS = new Map<string, GroupState>();
+const STATS_PANELS = new Map<string, StatsPanel>();
+const STATS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const STATS_REFRESH_DEBOUNCE_MS = 5 * 1000;
+const statsRefreshTimers = new Map<string, NodeJS.Timeout>();
 
 const ROLE_LABEL: Record<SlotKey, string> = {
   TANK: "🛡️ TANK",
@@ -76,6 +88,34 @@ const CLASS_EMOJI: Record<string, string> = {
 };
 
 const LEVEL_OPTIONS = Array.from({ length: 21 }, (_, i) => 50 + i);
+
+const CLASS_ROLES: Array<{ id: string; label: string }> = [
+  { id: "1468348908173529334", label: "Chaman" },
+  { id: "1468348908039311370", label: "Cazador" },
+  { id: "1468348906466185495", label: "Picaro" },
+  { id: "1468348905556148235", label: "Mago" },
+  { id: "1468348905304363141", label: "Paladin" },
+  { id: "1468348904406782060", label: "Sacerdote" },
+  { id: "1468348903727562784", label: "Brujo" },
+  { id: "1468348902745833524", label: "Druida" },
+  { id: "1468348896492388453", label: "Guerrero" },
+];
+
+const PROFESSION_ROLES: Array<{ id: string; label: string }> = [
+  { id: "1468348910807547934", label: "Herreria" },
+  { id: "1468350036411945113", label: "Sastreria" },
+  { id: "1468350037716111635", label: "Encantamiento" },
+  { id: "1468350038785790054", label: "Herboristeria" },
+  { id: "1468350039439966350", label: "Joyeria" },
+  { id: "1468350040232825126", label: "Alquimia" },
+  { id: "1468350040790536242", label: "Ingenieria" },
+  { id: "1468350416302375075", label: "Desuello" },
+  { id: "1468350416545779805", label: "Mineria" },
+  { id: "1468350417401413795", label: "Pesca" },
+  { id: "1468350418139484365", label: "Cocina" },
+  { id: "1468350627707879537", label: "Inscripcion" },
+  { id: "1468350641536630856", label: "Peleteria" },
+];
 
 const PENDING_TTL_MS = 15 * 60 * 1000;
 
@@ -361,6 +401,17 @@ function buildChannelSelect(userId: string): ActionRowBuilder<ChannelSelectMenuB
   return new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(select);
 }
 
+function buildStatsChannelSelect(userId: string): ActionRowBuilder<ChannelSelectMenuBuilder> {
+  const select = new ChannelSelectMenuBuilder()
+    .setCustomId(`rolestats:channel:${userId}`)
+    .setPlaceholder("Elegí el canal para publicar las estadísticas")
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+
+  return new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(select);
+}
+
 async function updateGroupMessage(params: {
   client: Client;
   state: GroupState;
@@ -451,6 +502,112 @@ function parseChannelSelectId(customId: string): {
   if (parts.length !== 3) return null;
   if (parts[0] !== "tbcgrp" || parts[1] !== "channel") return null;
   return { userId: parts[2] };
+}
+
+function parseStatsChannelSelectId(customId: string): {
+  userId: string;
+} | null {
+  const parts = customId.split(":");
+  if (parts.length !== 3) return null;
+  if (parts[0] !== "rolestats" || parts[1] !== "channel") return null;
+  return { userId: parts[2] };
+}
+
+async function buildRoleStatsEmbed(guildId: string, client: Client): Promise<EmbedBuilder> {
+  const guild = await client.guilds.fetch(guildId);
+  await guild.members.fetch();
+
+  const classCounts: Record<string, number> = {};
+  const professionCounts: Record<string, number> = {};
+
+  for (const role of CLASS_ROLES) classCounts[role.id] = 0;
+  for (const role of PROFESSION_ROLES) professionCounts[role.id] = 0;
+
+  let classTotal = 0;
+
+  for (const member of guild.members.cache.values()) {
+    if (member.user.bot) continue;
+
+    let hasClass = false;
+    for (const role of CLASS_ROLES) {
+      if (member.roles.cache.has(role.id)) {
+        classCounts[role.id] += 1;
+        hasClass = true;
+      }
+    }
+    if (hasClass) classTotal += 1;
+
+    for (const role of PROFESSION_ROLES) {
+      if (member.roles.cache.has(role.id)) {
+        professionCounts[role.id] += 1;
+      }
+    }
+  }
+
+  const classLines = CLASS_ROLES
+    .map((role) => `• ${role.label} — **${classCounts[role.id] ?? 0}**`)
+    .join("\n");
+
+  const professionLines = PROFESSION_ROLES
+    .map((role) => `• ${role.label} — **${professionCounts[role.id] ?? 0}**`)
+    .join("\n");
+
+  return new EmbedBuilder()
+    .setTitle("WoW • Estadísticas de Roles")
+    .setColor(0x38bdf8)
+    .setDescription("Conteo en tiempo real de clases y profesiones registradas.")
+    .addFields(
+      {
+        name: "Total de Personajes con Clases",
+        value: `**${classTotal}**`,
+        inline: false,
+      },
+      {
+        name: "Clases",
+        value: classLines || "Sin datos",
+        inline: false,
+      },
+      {
+        name: "Profesiones",
+        value: professionLines || "Sin datos",
+        inline: false,
+      },
+    )
+    .setFooter({ text: "World of Warcraft • Estadísticas" })
+    .setTimestamp(new Date());
+}
+
+async function refreshStatsPanelsForGuild(
+  client: Client,
+  guildId: string,
+): Promise<void> {
+  const panels = Array.from(STATS_PANELS.values()).filter(
+    (panel) => panel.guildId === guildId,
+  );
+  if (!panels.length) return;
+
+  const embed = await buildRoleStatsEmbed(guildId, client);
+
+  for (const panel of panels) {
+    try {
+      const channel = await client.channels.fetch(panel.channelId);
+      if (!channel || !channel.isTextBased()) continue;
+      const msg = await channel.messages.fetch(panel.messageId);
+      await msg.edit({ embeds: [embed] });
+    } catch {
+      STATS_PANELS.delete(panel.messageId);
+      await deleteStatsPanel(panel.messageId);
+    }
+  }
+}
+
+function scheduleStatsRefresh(client: Client, guildId: string): void {
+  if (statsRefreshTimers.has(guildId)) return;
+  const timer = setTimeout(async () => {
+    statsRefreshTimers.delete(guildId);
+    await refreshStatsPanelsForGuild(client, guildId);
+  }, STATS_REFRESH_DEBOUNCE_MS);
+  statsRefreshTimers.set(guildId, timer);
 }
 
 async function handleRoleButton(interaction: Interaction, client: Client) {
@@ -788,6 +945,147 @@ async function handleChannelSelect(
     content: "Panel de LFG publicado.",
     components: [],
   });
+}
+
+async function handleChannelStatsCommand(interaction: Interaction) {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== "channelstats") return;
+
+  if (!interaction.inGuild()) {
+    await interaction.reply({
+      content: "Este comando solo funciona dentro de un servidor.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const member = interaction.member;
+  const isAdmin =
+    !!member &&
+    typeof member === "object" &&
+    "permissions" in member &&
+    (member.permissions as any)?.has(PermissionFlagsBits.Administrator);
+
+  if (!isAdmin) {
+    await interaction.reply({
+      content: "Solo administradores pueden usar este comando.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  await interaction.reply({
+    content: "Seleccioná el canal donde publicar el panel de estadísticas:",
+    components: [buildStatsChannelSelect(interaction.user.id)],
+    ephemeral: true,
+  });
+}
+
+async function handleStatsCommand(interaction: Interaction, client: Client) {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== "stats") return;
+
+  if (!interaction.inGuild()) {
+    await interaction.reply({
+      content: "Este comando solo funciona dentro de un servidor.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const member = interaction.member;
+  const isAdmin =
+    !!member &&
+    typeof member === "object" &&
+    "permissions" in member &&
+    (member.permissions as any)?.has(PermissionFlagsBits.Administrator);
+
+  if (!isAdmin) {
+    await interaction.reply({
+      content: "Solo administradores pueden usar este comando.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    const embed = await buildRoleStatsEmbed(interaction.guildId!, client);
+    const channel = interaction.channel;
+    if (!channel || !channel.isTextBased()) {
+      await interaction.editReply("No pude acceder a este canal.");
+      return;
+    }
+    const message = await channel.send({ embeds: [embed] });
+    const panel: StatsPanel = {
+      messageId: message.id,
+      channelId: message.channelId,
+      guildId: message.guildId ?? interaction.guildId!,
+      createdByUserId: interaction.user.id,
+    };
+    STATS_PANELS.set(message.id, panel);
+    await saveStatsPanel(panel);
+    await interaction.editReply("Panel de estadísticas publicado.");
+  } catch {
+    await interaction.editReply(
+      "No pude obtener los miembros. Verificá que el bot tenga el intent de miembros habilitado.",
+    );
+  }
+}
+
+async function handleStatsChannelSelect(
+  interaction: Interaction,
+  client: Client,
+) {
+  if (!interaction.isChannelSelectMenu()) return;
+
+  const parsed = parseStatsChannelSelectId(interaction.customId);
+  if (!parsed) return;
+
+  if (interaction.user.id !== parsed.userId) {
+    await interaction.reply({
+      content: "Solo el autor puede usar este selector.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const channelId = interaction.values[0];
+  await interaction.deferUpdate();
+
+  try {
+    const channel = await interaction.client.channels.fetch(channelId);
+    if (!channel || !channel.isTextBased()) {
+      await interaction.followUp({
+        content: "No pude acceder al canal seleccionado.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const embed = await buildRoleStatsEmbed(interaction.guildId!, client);
+    const message = await channel.send({ embeds: [embed] });
+    const panel: StatsPanel = {
+      messageId: message.id,
+      channelId: message.channelId,
+      guildId: message.guildId ?? interaction.guildId!,
+      createdByUserId: interaction.user.id,
+    };
+    STATS_PANELS.set(message.id, panel);
+    await saveStatsPanel(panel);
+
+    await interaction.editReply({
+      content: "Panel de estadísticas publicado.",
+      components: [],
+    });
+  } catch {
+    await interaction.followUp({
+      content:
+        "No pude obtener los miembros. Verificá que el bot tenga el intent de miembros habilitado.",
+      ephemeral: true,
+    });
+  }
 }
 
 async function handleClassSelect(
@@ -1133,6 +1431,16 @@ async function registerSlashCommands(clientId: string) {
       .setDescription("Publica el panel de LFG en un canal")
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
       .setDMPermission(false),
+    new SlashCommandBuilder()
+      .setName("stats")
+      .setDescription("Publica el panel de estadísticas en este canal")
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .setDMPermission(false),
+    new SlashCommandBuilder()
+      .setName("channelstats")
+      .setDescription("Publica el panel de estadísticas en un canal")
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .setDMPermission(false),
   ].map((c) => c.toJSON());
 
   if (guildId) {
@@ -1155,7 +1463,7 @@ export async function startDiscordBot(): Promise<void> {
   await initDb();
 
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds],
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
   });
 
   client.once(Events.ClientReady, async (readyClient: Client<true>) => {
@@ -1167,12 +1475,28 @@ export async function startDiscordBot(): Promise<void> {
     for (const state of persisted) {
       await updateGroupMessage({ client, state });
     }
+
+    const statsPanels = await loadStatsPanels();
+    statsPanels.forEach((panel) => {
+      STATS_PANELS.set(panel.messageId, panel);
+    });
+
+    setInterval(async () => {
+      const guildIds = new Set(
+        Array.from(STATS_PANELS.values()).map((panel) => panel.guildId),
+      );
+      for (const guildId of guildIds) {
+        await refreshStatsPanelsForGuild(client, guildId);
+      }
+    }, STATS_REFRESH_INTERVAL_MS);
   });
 
   client.on(Events.InteractionCreate, async (interaction: Interaction) => {
     try {
       await handleCreateGroupCommand(interaction);
       await handleChannelGroupCommand(interaction);
+      await handleStatsCommand(interaction, client);
+      await handleChannelStatsCommand(interaction);
 
       if (interaction.isButton()) {
         await handleActionButton(interaction, client);
@@ -1182,6 +1506,7 @@ export async function startDiscordBot(): Promise<void> {
 
       if (interaction.isChannelSelectMenu()) {
         await handleChannelSelect(interaction, client);
+        await handleStatsChannelSelect(interaction, client);
         return;
       }
 
@@ -1215,6 +1540,19 @@ export async function startDiscordBot(): Promise<void> {
       }
       throw err;
     }
+  });
+
+  client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+    if (oldMember.guild.id !== newMember.guild.id) return;
+    scheduleStatsRefresh(client, newMember.guild.id);
+  });
+
+  client.on(Events.GuildMemberRemove, async (member) => {
+    scheduleStatsRefresh(client, member.guild.id);
+  });
+
+  client.on(Events.GuildMemberAdd, async (member) => {
+    scheduleStatsRefresh(client, member.guild.id);
   });
 
   await client.login(token);
